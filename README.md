@@ -106,28 +106,134 @@ curl -X POST "http://127.0.0.1:8000/translate" \
 
 ## Docker
 
-### Build the image
+### Using Docker Compose (Recommended)
+
+**1. Start the service:**
+
+```bash
+docker-compose up -d
+```
+
+**2. View logs:**
+
+```bash
+docker-compose logs -f
+```
+
+**3. Stop the service:**
+
+```bash
+docker-compose down
+```
+
+### Using Docker CLI
+
+**1. Build the image:**
 
 ```bash
 docker build -t translator-gn-es .
 ```
 
-### Run the container
+**2. Run the container:**
 
 ```bash
-docker run -d -p 8000:8000 -e TRANSLATOR_API_KEY=your_secret_key_here translator-gn-es
+docker run -d -p 8000:8000 -e TRANSLATOR_API_KEY=your_secret_key_here --name translator translator-gn-es
+```
+
+**3. View logs:**
+
+```bash
+docker logs -f translator
+```
+
+**4. Stop and remove:**
+
+```bash
+docker stop translator
+docker rm translator
+```
+
+### Testing the Docker container
+
+```bash
+curl -X POST "http://localhost:8000/translate" \
+  -H "x-api-key: your_secret_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Mba'\''éichapa nde?", "source_lang":"gn", "target_lang":"es"}'
+```
+
+## API Endpoints
+
+### GET `/`
+
+Returns API information and supported languages.
+
+### GET `/health`
+
+Health check endpoint for monitoring.
+
+### POST `/translate`
+
+Translate text between Guaraní and Spanish.
+
+**Headers:**
+
+- `x-api-key`: Your API key (from `.env`)
+- `Content-Type`: `application/json`
+
+**Request Body:**
+
+```json
+{
+  "text": "Mba'éichapa nde?",
+  "source_lang": "gn",
+  "target_lang": "es"
+}
+```
+
+**Response:**
+
+```json
+{
+  "translated_text": "¿Cómo estás?"
+}
+```
+
+### Example cURL requests
+
+**Guaraní to Spanish:**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/translate" \
+  -H "x-api-key: your_secret_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Mba'\''éichapa nde?", "source_lang":"gn", "target_lang":"es"}'
+```
+
+**Spanish to Guaraní:**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/translate" \
+  -H "x-api-key: your_secret_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hola, ¿cómo estás?", "source_lang":"es", "target_lang":"gn"}'
 ```
 
 ## Project Structure
 
 ```
 translator-gn-es/
-├── main.py              # FastAPI application
+├── main.py              # FastAPI application entry point
+├── config.py            # Configuration and environment variables
+├── models.py            # Pydantic request/response models
+├── security.py          # API key authentication
+├── translator.py        # Translation service logic
 ├── requirements.txt     # Python dependencies
-├── Dockerfile          # Docker configuration
-├── .env                # Environment variables (not versioned)
-├── .gitignore          # Git ignore rules
-└── README.md           # This file
+├── Dockerfile           # Docker configuration
+├── docker-compose.yml   # Docker Compose configuration
+├── .env                 # Environment variables (not versioned)
+├── .gitignore           # Git ignore rules
+└── README.md            # This file
 ```
 
 ## Configuration
