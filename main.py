@@ -1,87 +1,79 @@
-from fastapi import FastAPI, HTTPException, Request, Depends
-from pydantic import BaseModel, Field
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+"""
+FastAPI application for Guaraní-Spanish translation.
+"""
+from fastapi import FastAPI, Request, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
+from config import API_KEY, RATE_LIMIT, ALLOWED_ORIGINS, ALLOWED_METHODS, ALLOWED_HEADERS
+from models import TranslateRequest, TranslateResponse
+from security import verify_api_key
+from translator import translation_service
 
-app = FastAPI(title="Translator GN<->ES")
 
-# =========================
-#  Security
-# =========================
-API_KEY = os.environ.get("TRANSLATOR_API_KEY", "")
+# Initialize FastAPI app
+app = FastAPI(
+    title="Translator GN<->ES",
+    description="Translation API for Guaraní and Spanish using NLLB-200",
+    version="1.0.0"
+)
+
+# Security check
 if not API_KEY:
     print("⚠ WARNING: No API key set (TRANSLATOR_API_KEY)")
 
-def verify_api_key(request: Request):
-    key = request.headers.get("x-api-key")
-    if key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-
-# =========================
-#   Rate Limiting
-# =========================
+# Rate limiting
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
-# =========================
-#   CORS (only your Next.js)
-# =========================
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://tu-proyecto.vercel.app"],
-    allow_methods=["POST"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=ALLOWED_METHODS,
+    allow_headers=ALLOWED_HEADERS,
 )
 
-# =========================
-#   Translation Model
-# =========================
-MODEL = "facebook/nllb-200-distilled-600M"
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL)
-model = AutoModelForSeq2SeqLM.from_pretrained(MODEL)
-
-# Language code mapping to NLLB codes
-LANG_CODES = {
-    "gn": "grn_Latn",  # Guaraní
-    "es": "spa_Latn"   # Spanish
-}
-
-# =========================
-#   Input Validation
-# =========================
-class TranslateRequest(BaseModel):
-    text: str
-    source_lang: str = Field(pattern="^(gn|es)$")
-    target_lang: str = Field(pattern="^(gn|es)$")
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "name": "Translator GN<->ES",
+        "version": "1.0.0",
+        "supported_languages": ["gn", "es"]
+    }
 
 
-@app.post("/translate")
-@limiter.limit("10/minute")
-def translate(request: Request, req: TranslateRequest, _: None = Depends(verify_api_key)):
-    # Convert language codes to NLLB format
-    src_lang = LANG_CODES[req.source_lang]
-    tgt_lang = LANG_CODES[req.target_lang]
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
+@app.post("/translate", response_model=TranslateResponse)
+@limiter.limit(RATE_LIMIT)
+async def translate(
+    request: Request,
+    req: TranslateRequest,
+    _: None = Depends(verify_api_key)
+) -> TranslateResponse:
+    """
+    Translate text between Guaraní and Spanish.
     
-    # Set source language
-    tokenizer.src_lang = src_lang
-    inputs = tokenizer(req.text, return_tensors="pt")
-
-    # Get target language token ID
-    tgt_token_id = tokenizer.convert_tokens_to_ids(tgt_lang)
-    
-    generated = model.generate(
-        **inputs,
-        forced_bos_token_id=tgt_token_id
+    Args:
+        request: FastAPI request object (required for rate limiting)
+        req: Translation request with text and language codes
+        
+    Returns:
+        Translation response with translated text
+    """
+    result = translation_service.translate(
+        text=req.text,
+        source_lang=req.source_lang,
+        target_lang=req.target_lang
     )
-
-    result = tokenizer.batch_decode(generated, skip_special_tokens=True)[0]
-
-    return {"translated_text": result}
+    
+    return TranslateResponse(translated_text=result)
 
